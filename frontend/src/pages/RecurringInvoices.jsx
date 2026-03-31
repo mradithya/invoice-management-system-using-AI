@@ -27,6 +27,8 @@ import { Add as AddIcon, Delete as DeleteIcon, Pause as PauseIcon, PlayArrow as 
 import { clientService, recurringService } from '../services/apiService';
 import { useNotification } from '../context/NotificationContext';
 import AnimatedPage from '../components/AnimatedPage';
+import { useAuth } from '../context/AuthContext';
+import { getAdminScopeUserId } from '../utils/adminScope';
 
 const defaultItem = { description: '', quantity: 1, unit_price: 0 };
 const formatDateTimeLocal = (date) => {
@@ -67,6 +69,8 @@ const formatRunDateTime = (value) => {
 
 const RecurringInvoices = () => {
   const notify = useNotification();
+  const { isAdmin } = useAuth();
+  const scopeUserId = getAdminScopeUserId();
   const [templates, setTemplates] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +90,7 @@ const RecurringInvoices = () => {
   const [items, setItems] = useState([defaultItem]);
 
   const loadData = async () => {
+    setLoading(true);
     try {
       const [templatesRes, clientsRes] = await Promise.all([
         recurringService.getAll(),
@@ -107,8 +112,15 @@ const RecurringInvoices = () => {
   };
 
   useEffect(() => {
+    if (isAdmin && !scopeUserId) {
+      setLoading(false);
+      setTemplates([]);
+      setClients([]);
+      return;
+    }
+
     loadData();
-  }, []);
+  }, [scopeUserId, isAdmin]);
 
   const onChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -227,6 +239,21 @@ const RecurringInvoices = () => {
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
           <CircularProgress />
         </Box>
+      </AnimatedPage>
+    );
+  }
+
+  if (isAdmin && !scopeUserId) {
+    return (
+      <AnimatedPage>
+        <Card sx={{ p: 3, textAlign: 'center' }}>
+          <Typography variant="h6" fontWeight="600" mb={1}>
+            Select a user
+          </Typography>
+          <Typography color="text.secondary">
+            Choose a user from the top bar to manage recurring invoices.
+          </Typography>
+        </Card>
       </AnimatedPage>
     );
   }

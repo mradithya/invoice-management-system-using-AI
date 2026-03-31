@@ -21,14 +21,26 @@ import SummaryCard from '../components/dashboard/SummaryCard';
 import InsightsPanel from '../components/dashboard/InsightsPanel';
 import DataTableCard from '../components/dashboard/DataTableCard';
 import { formatCurrencyINR } from '../utils/currency';
+import { useAuth } from '../context/AuthContext';
+import { getAdminScopeUserId } from '../utils/adminScope';
 
 const Dashboard = () => {
+  const { isAdmin } = useAuth();
+  const scopeUserId = getAdminScopeUserId();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [recentInvoices, setRecentInvoices] = useState([]);
   const [clients, setClients] = useState([]);
 
   const loadDashboard = useCallback(async (showLoader = false) => {
+    if (isAdmin && !scopeUserId) {
+      setLoading(false);
+      setStats(null);
+      setRecentInvoices([]);
+      setClients([]);
+      return;
+    }
+
     if (showLoader) {
       setLoading(true);
     }
@@ -48,9 +60,13 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin, scopeUserId]);
 
   useEffect(() => {
+    if (isAdmin && !scopeUserId) {
+      return undefined;
+    }
+
     loadDashboard(true);
 
     // Keep summary cards/charts in near real-time sync.
@@ -70,6 +86,15 @@ const Dashboard = () => {
       window.removeEventListener('focus', handleFocus);
     };
   }, [loadDashboard]);
+
+  if (isAdmin && !scopeUserId) {
+    return (
+      <div className="rounded-2xl border border-slate-700/70 bg-slate-800/70 p-6 text-slate-100 shadow-lg shadow-black/20">
+        <h3 className="text-base font-semibold text-white">Select a user</h3>
+        <p className="mt-2 text-sm text-slate-300">Choose a user from the top bar to view the dashboard.</p>
+      </div>
+    );
+  }
 
   const monthlyRevenueData = useMemo(() => {
     if (!stats?.monthly_revenue) return [];

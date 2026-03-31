@@ -8,6 +8,16 @@ class Invoice {
     private $conn;
     private $table_name = "invoices";
 
+    private function isDuplicateKeyException($e) {
+        if (!($e instanceof PDOException)) {
+            return false;
+        }
+
+        $errorInfo = $e->errorInfo ?? null;
+        // MySQL duplicate entry
+        return is_array($errorInfo) && isset($errorInfo[1]) && intval($errorInfo[1]) === 1062;
+    }
+
     public $id;
     public $user_id;
     public $client_id;
@@ -29,41 +39,64 @@ class Invoice {
      * Create new invoice
      */
     public function create() {
-        $query = "INSERT INTO " . $this->table_name . "
-                  SET user_id = :user_id,
-                      client_id = :client_id,
-                      invoice_number = :invoice_number,
-                      issue_date = :issue_date,
-                      due_date = :due_date,
-                      subtotal = :subtotal,
-                      tax_rate = :tax_rate,
-                      tax_amount = :tax_amount,
-                      total = :total,
-                      status = :status,
-                      notes = :notes";
+        $original_invoice_number = trim((string)($this->invoice_number ?? ''));
+        $auto_generate = ($original_invoice_number === '');
 
-        $stmt = $this->conn->prepare($query);
-
-        // Sanitize
-        $this->invoice_number = htmlspecialchars(strip_tags($this->invoice_number));
+        // Sanitize stable fields once
         $this->notes = htmlspecialchars(strip_tags($this->notes));
 
-        // Bind
-        $stmt->bindParam(":user_id", $this->user_id);
-        $stmt->bindParam(":client_id", $this->client_id);
-        $stmt->bindParam(":invoice_number", $this->invoice_number);
-        $stmt->bindParam(":issue_date", $this->issue_date);
-        $stmt->bindParam(":due_date", $this->due_date);
-        $stmt->bindParam(":subtotal", $this->subtotal);
-        $stmt->bindParam(":tax_rate", $this->tax_rate);
-        $stmt->bindParam(":tax_amount", $this->tax_amount);
-        $stmt->bindParam(":total", $this->total);
-        $stmt->bindParam(":status", $this->status);
-        $stmt->bindParam(":notes", $this->notes);
+        $maxAttempts = $auto_generate ? 5 : 1;
 
-        if ($stmt->execute()) {
-            $this->id = $this->conn->lastInsertId();
-            return true;
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            if ($auto_generate) {
+                $this->invoice_number = $this->generateInvoiceNumber();
+            } else {
+                $this->invoice_number = $original_invoice_number;
+            }
+
+            $query = "INSERT INTO " . $this->table_name . "
+                      SET user_id = :user_id,
+                          client_id = :client_id,
+                          invoice_number = :invoice_number,
+                          issue_date = :issue_date,
+                          due_date = :due_date,
+                          subtotal = :subtotal,
+                          tax_rate = :tax_rate,
+                          tax_amount = :tax_amount,
+                          total = :total,
+                          status = :status,
+                          notes = :notes";
+
+            $stmt = $this->conn->prepare($query);
+
+            // Sanitize invoice number each attempt (it may be auto-generated)
+            $this->invoice_number = htmlspecialchars(strip_tags($this->invoice_number));
+
+            // Bind
+            $stmt->bindParam(":user_id", $this->user_id);
+            $stmt->bindParam(":client_id", $this->client_id);
+            $stmt->bindParam(":invoice_number", $this->invoice_number);
+            $stmt->bindParam(":issue_date", $this->issue_date);
+            $stmt->bindParam(":due_date", $this->due_date);
+            $stmt->bindParam(":subtotal", $this->subtotal);
+            $stmt->bindParam(":tax_rate", $this->tax_rate);
+            $stmt->bindParam(":tax_amount", $this->tax_amount);
+            $stmt->bindParam(":total", $this->total);
+            $stmt->bindParam(":status", $this->status);
+            $stmt->bindParam(":notes", $this->notes);
+
+            try {
+                if ($stmt->execute()) {
+                    $this->id = $this->conn->lastInsertId();
+                    return true;
+                }
+            } catch (PDOException $e) {
+                if ($auto_generate && $this->isDuplicateKeyException($e)) {
+                    // Another invoice for this user was created concurrently; retry with next number.
+                    continue;
+                }
+                throw $e;
+            }
         }
 
         return false;
@@ -197,6 +230,7 @@ class Invoice {
      * Generate next invoice number
      */
     public function generateInvoiceNumber() {
+        // Per-user sequence: each user starts from INV-00001.
         $query = "SELECT MAX(CAST(SUBSTRING(invoice_number, 5) AS UNSIGNED)) as max_num
                   FROM " . $this->table_name . "
                   WHERE user_id = :user_id
@@ -208,7 +242,7 @@ class Invoice {
         $row = $stmt->fetch();
 
         $next_num = ($row['max_num'] ?? 0) + 1;
-        return 'INV-' . str_pad($next_num, 5, '0', STR_PAD_LEFT);
+        return 'INV-' . str_pad((string)$next_num, 5, '0', STR_PAD_LEFT);
     }
 
     /**

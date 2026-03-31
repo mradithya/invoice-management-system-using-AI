@@ -34,10 +34,14 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import AnimatedPage from '../components/AnimatedPage';
 import { formatCurrencyINR } from '../utils/currency';
+import { useAuth } from '../context/AuthContext';
+import { getAdminScopeUserId } from '../utils/adminScope';
 
 const InvoiceDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
+  const scopeUserId = getAdminScopeUserId();
   const [invoice, setInvoice] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,9 +56,16 @@ const InvoiceDetail = () => {
   });
 
   useEffect(() => {
+    if (isAdmin && !scopeUserId) {
+      setLoading(false);
+      setInvoice(null);
+      setPayments([]);
+      return;
+    }
+
     fetchInvoiceDetails();
     fetchPayments();
-  }, [id]);
+  }, [id, scopeUserId, isAdmin]);
 
   const fetchInvoiceDetails = async () => {
     try {
@@ -226,6 +237,21 @@ const InvoiceDetail = () => {
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
           <CircularProgress />
         </Box>
+      </AnimatedPage>
+    );
+  }
+
+  if (isAdmin && !scopeUserId) {
+    return (
+      <AnimatedPage>
+        <Card sx={{ p: 3, textAlign: 'center' }}>
+          <Typography variant="h6" fontWeight="600" mb={1}>
+            Select a user
+          </Typography>
+          <Typography color="text.secondary">
+            Choose a user from the top bar to view invoice details.
+          </Typography>
+        </Card>
       </AnimatedPage>
     );
   }

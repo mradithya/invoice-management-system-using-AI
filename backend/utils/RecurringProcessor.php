@@ -33,7 +33,7 @@ class RecurringProcessor {
         $invoice = new Invoice($db);
         $invoice->user_id = intval($template['user_id']);
         $invoice->client_id = intval($template['client_id']);
-        $invoice->invoice_number = $invoice->generateInvoiceNumber();
+        $invoice->invoice_number = '';
         $invoice->issue_date = date('Y-m-d');
         $invoice->due_date = date('Y-m-d', strtotime(date('Y-m-d') . ' +' . intval($template['due_after_days']) . ' days'));
         $invoice->tax_rate = floatval($template['tax_rate']);

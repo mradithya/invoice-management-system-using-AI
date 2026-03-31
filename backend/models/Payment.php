@@ -70,6 +70,24 @@ class Payment {
     }
 
     /**
+     * Read all payments for an invoice, scoped to invoice owner.
+     */
+    public function readByInvoiceForUser($user_id) {
+        $query = "SELECT p.*
+                  FROM " . $this->table_name . " p
+                  INNER JOIN invoices i ON i.id = p.invoice_id
+                  WHERE p.invoice_id = :invoice_id
+                    AND i.user_id = :user_id
+                  ORDER BY p.payment_date DESC";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':invoice_id', $this->invoice_id);
+        $stmt->bindParam(':user_id', $user_id);
+        $stmt->execute();
+        return $stmt;
+    }
+
+    /**
      * Get total paid amount for an invoice
      */
     public function getTotalPaid() {
@@ -96,5 +114,22 @@ class Payment {
         $stmt->bindParam(":id", $this->id);
 
         return $stmt->execute();
+    }
+
+    /**
+     * Delete a payment only if it belongs to an invoice owned by the given user.
+     */
+    public function deleteForUser($user_id) {
+        $query = "DELETE p
+                  FROM " . $this->table_name . " p
+                  INNER JOIN invoices i ON i.id = p.invoice_id
+                  WHERE p.id = :id
+                    AND i.user_id = :user_id";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':id', $this->id);
+        $stmt->bindParam(':user_id', $user_id);
+        $stmt->execute();
+        return $stmt->rowCount() > 0;
     }
 }

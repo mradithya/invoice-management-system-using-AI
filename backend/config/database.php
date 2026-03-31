@@ -102,6 +102,81 @@ class Database {
             $this->conn->exec("ALTER TABLE recurring_invoices MODIFY COLUMN last_run_date DATETIME NULL");
             $this->conn->exec("UPDATE recurring_invoices SET last_run_date = CONCAT(DATE(last_run_date), ' 00:00:00') WHERE last_run_date IS NOT NULL");
         }
+
+        // Invoices: allow invoice_number to restart per user.
+        // Enforce uniqueness per user, not globally.
+        $this->ensureInvoiceNumberUniquePerUser();
+    }
+
+    private function ensureInvoiceNumberUniquePerUser() {
+        try {
+            // If composite unique already exists, do nothing.
+            if ($this->uniqueIndexExistsWithColumns('invoices', ['user_id', 'invoice_number'])) {
+                return;
+            }
+
+            // Drop any UNIQUE index that enforces global uniqueness on invoice_number.
+            $uniqueIndexes = $this->getUniqueIndexesForTable('invoices');
+            foreach ($uniqueIndexes as $idx) {
+                if (($idx['columns'] ?? '') === 'invoice_number') {
+                    $indexName = $idx['index_name'];
+                    if (!empty($indexName)) {
+                        $this->conn->exec("ALTER TABLE invoices DROP INDEX `" . str_replace('`', '``', $indexName) . "`");
+                    }
+                }
+            }
+
+            // Add composite unique index.
+            if (!$this->indexExists('invoices', 'uniq_user_invoice_number')) {
+                $this->conn->exec("ALTER TABLE invoices ADD UNIQUE KEY uniq_user_invoice_number (user_id, invoice_number)");
+            }
+        } catch (Exception $e) {
+            // Best-effort schema fix; avoid blocking the app if permissions differ.
+            error_log('Schema ensure failed for invoices unique index: ' . $e->getMessage());
+        }
+    }
+
+    private function indexExists($table, $indexName) {
+        $query = "SELECT COUNT(*) AS count_idx
+                  FROM information_schema.STATISTICS
+                  WHERE TABLE_SCHEMA = :schema_name
+                    AND TABLE_NAME = :table_name
+                    AND INDEX_NAME = :index_name";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':schema_name', $this->db_name);
+        $stmt->bindParam(':table_name', $table);
+        $stmt->bindParam(':index_name', $indexName);
+        $stmt->execute();
+        $row = $stmt->fetch();
+        return intval($row['count_idx'] ?? 0) > 0;
+    }
+
+    private function uniqueIndexExistsWithColumns($table, $columns) {
+        $target = implode(',', $columns);
+        $uniqueIndexes = $this->getUniqueIndexesForTable($table);
+        foreach ($uniqueIndexes as $idx) {
+            if (($idx['columns'] ?? '') === $target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function getUniqueIndexesForTable($table) {
+        $query = "SELECT
+                    INDEX_NAME as index_name,
+                    GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX ASC SEPARATOR ',') as columns
+                  FROM information_schema.STATISTICS
+                  WHERE TABLE_SCHEMA = :schema_name
+                    AND TABLE_NAME = :table_name
+                    AND NON_UNIQUE = 0
+                  GROUP BY INDEX_NAME";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':schema_name', $this->db_name);
+        $stmt->bindParam(':table_name', $table);
+        $stmt->execute();
+        return $stmt->fetchAll() ?: [];
     }
 
     private function columnExists($table, $column) {

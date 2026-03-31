@@ -29,7 +29,15 @@ $database = new Database();
 $db = $database->getConnection();
 
 $invoice = new Invoice($db);
-$invoice->user_id = Auth::getUserId();
+$actor_user_id = Auth::getUserId();
+$is_admin = Auth::getUserRole() === 'admin';
+$scope_user_id = $is_admin ? intval($_GET['user_id'] ?? 0) : $actor_user_id;
+
+if ($is_admin && $scope_user_id <= 0) {
+    Response::validationError(['user_id is required for admin']);
+}
+
+$invoice->user_id = $scope_user_id;
 
 // Update overdue invoices
 $invoice->updateOverdueStatus();
@@ -193,8 +201,8 @@ switch ($method) {
             Response::validationError(['client_id, issue_date, due_date, and items are required']);
         }
 
-        // Generate invoice number
-        $invoice->invoice_number = $invoice->generateInvoiceNumber();
+        // Invoice number is assigned during create() (globally unique)
+        $invoice->invoice_number = '';
         $invoice->client_id = $data->client_id;
         $invoice->issue_date = $data->issue_date;
         $invoice->due_date = $data->due_date;
@@ -236,7 +244,8 @@ switch ($method) {
                 $db->commit();
 
                 AuditLogger::log($db, Auth::getUserId(), 'create_invoice', 'invoice', strval($invoice->id), [
-                    'invoice_number' => $invoice->invoice_number
+                    'invoice_number' => $invoice->invoice_number,
+                    'target_user_id' => $scope_user_id
                 ]);
 
                 Response::success([
@@ -308,7 +317,9 @@ switch ($method) {
                 }
 
                 $db->commit();
-                AuditLogger::log($db, Auth::getUserId(), 'update_invoice', 'invoice', strval($invoice_id));
+                AuditLogger::log($db, Auth::getUserId(), 'update_invoice', 'invoice', strval($invoice_id), [
+                    'target_user_id' => $scope_user_id
+                ]);
                 Response::success([], 'Invoice updated successfully');
             } else {
                 throw new Exception('Failed to update invoice');
@@ -328,7 +339,9 @@ switch ($method) {
         $invoice->id = $invoice_id;
 
         if ($invoice->delete()) {
-            AuditLogger::log($db, Auth::getUserId(), 'delete_invoice', 'invoice', strval($invoice_id));
+            AuditLogger::log($db, Auth::getUserId(), 'delete_invoice', 'invoice', strval($invoice_id), [
+                'target_user_id' => $scope_user_id
+            ]);
             Response::success([], 'Invoice deleted successfully');
         } else {
             Response::serverError('Failed to delete invoice');

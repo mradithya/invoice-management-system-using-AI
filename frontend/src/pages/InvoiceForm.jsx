@@ -19,9 +19,11 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { invoiceService, clientService } from '../services/apiService';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 import AnimatedPage from '../components/AnimatedPage';
 import { validateInvoiceItems, validateDateRange } from '../utils/validationHelpers';
 import { formatCurrencyINR } from '../utils/currency';
+import { getAdminScopeUserId } from '../utils/adminScope';
 
 const formatDateToIso = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
@@ -81,6 +83,8 @@ const InvoiceForm = () => {
   const notify = useNotification();
   const { id } = useParams();
   const isEditing = !!id;
+  const { isAdmin } = useAuth();
+  const scopeUserId = getAdminScopeUserId();
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(isEditing);
@@ -98,11 +102,17 @@ const InvoiceForm = () => {
   ]);
 
   useEffect(() => {
+    if (isAdmin && !scopeUserId) {
+      setLoading(false);
+      setClients([]);
+      return;
+    }
+
     fetchClients();
     if (isEditing) {
       fetchInvoice();
     }
-  }, [id]);
+  }, [id, scopeUserId, isAdmin]);
 
   const fetchClients = async () => {
     try {
@@ -136,6 +146,21 @@ const InvoiceForm = () => {
       setLoading(false);
     }
   };
+
+  if (isAdmin && !scopeUserId) {
+    return (
+      <AnimatedPage>
+        <Card sx={{ p: 3, textAlign: 'center' }}>
+          <Typography variant="h6" fontWeight="600" mb={1}>
+            Select a user
+          </Typography>
+          <Typography color="text.secondary">
+            Choose a user from the top bar to create or edit invoices.
+          </Typography>
+        </Card>
+      </AnimatedPage>
+    );
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;

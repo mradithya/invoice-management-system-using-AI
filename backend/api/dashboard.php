@@ -26,8 +26,15 @@ if ($method !== 'GET') {
 $database = new Database();
 $db = $database->getConnection();
 
-$user_id = Auth::getUserId();
-$analyzer = new FinancialAnalyzer($db, $user_id);
+$actor_user_id = Auth::getUserId();
+$is_admin = Auth::getUserRole() === 'admin';
+$scope_user_id = $is_admin ? intval($_GET['user_id'] ?? 0) : $actor_user_id;
+
+if ($is_admin && $scope_user_id <= 0) {
+    Response::validationError(['user_id is required for admin']);
+}
+
+$analyzer = new FinancialAnalyzer($db, $scope_user_id);
 
 // Parse request URI
 $request_uri = $_SERVER['REQUEST_URI'];

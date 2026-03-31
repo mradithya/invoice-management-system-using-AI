@@ -1,4 +1,21 @@
 import api from './api';
+import { getAdminScopeUserId } from '../utils/adminScope';
+
+const withScopeUserId = (path) => {
+  const scopeUserId = getAdminScopeUserId();
+  if (!scopeUserId) {
+    return path;
+  }
+
+  const text = String(path || '');
+  if (text.includes('user_id=')) {
+    return text;
+  }
+
+  return text.includes('?')
+    ? `${text}&user_id=${encodeURIComponent(scopeUserId)}`
+    : `${text}?user_id=${encodeURIComponent(scopeUserId)}`;
+};
 
 export const authService = {
   register: async (userData) => {
@@ -41,64 +58,69 @@ export const profileService = {
 
 export const clientService = {
   getAll: async () => {
-    const response = await api.get('/clients.php');
+    const response = await api.get(withScopeUserId('/clients.php'));
     return response.data;
   },
 
   getOne: async (id) => {
-    const response = await api.get(`/clients.php/${id}`);
+    const response = await api.get(withScopeUserId(`/clients.php/${id}`));
     return response.data;
   },
 
   create: async (clientData) => {
-    const response = await api.post('/clients.php', clientData);
+    const response = await api.post(withScopeUserId('/clients.php'), clientData);
     return response.data;
   },
 
   update: async (id, clientData) => {
-    const response = await api.put(`/clients.php/${id}`, clientData);
+    const response = await api.put(withScopeUserId(`/clients.php/${id}`), clientData);
     return response.data;
   },
 
   delete: async (id) => {
-    const response = await api.delete(`/clients.php/${id}`);
+    const response = await api.delete(withScopeUserId(`/clients.php/${id}`));
     return response.data;
   }
 };
 
 export const invoiceService = {
   getAll: async () => {
-    const response = await api.get('/invoices.php');
+    const response = await api.get(withScopeUserId('/invoices.php'));
     return response.data;
   },
 
   getOne: async (id) => {
-    const response = await api.get(`/invoices.php/${id}`);
+    const response = await api.get(withScopeUserId(`/invoices.php/${id}`));
     return response.data;
   },
 
   create: async (invoiceData) => {
-    const response = await api.post('/invoices.php', invoiceData);
+    const response = await api.post(withScopeUserId('/invoices.php'), invoiceData);
     return response.data;
   },
 
   update: async (id, invoiceData) => {
-    const response = await api.put(`/invoices.php/${id}`, invoiceData);
+    const response = await api.put(withScopeUserId(`/invoices.php/${id}`), invoiceData);
     return response.data;
   },
 
   delete: async (id) => {
-    const response = await api.delete(`/invoices.php/${id}`);
+    const response = await api.delete(withScopeUserId(`/invoices.php/${id}`));
     return response.data;
   },
 
   sendEmail: async (id, payload) => {
-    const response = await api.post(`/invoices.php/${id}/email`, payload);
+    const response = await api.post(withScopeUserId(`/invoices.php/${id}/email`), payload);
     return response.data;
   },
 
   getReceivables: async (filters = {}) => {
     const params = new URLSearchParams();
+
+    const scopeUserId = getAdminScopeUserId();
+    if (scopeUserId) {
+      params.set('user_id', String(scopeUserId));
+    }
 
     if (filters.date_from) {
       params.set('date_from', filters.date_from);
@@ -115,71 +137,71 @@ export const invoiceService = {
 
 export const paymentService = {
   getByInvoice: async (invoiceId) => {
-    const response = await api.get(`/payments.php/invoice/${invoiceId}`);
+    const response = await api.get(withScopeUserId(`/payments.php/invoice/${invoiceId}`));
     return response.data;
   },
 
   create: async (paymentData) => {
-    const response = await api.post('/payments.php', paymentData);
+    const response = await api.post(withScopeUserId('/payments.php'), paymentData);
     return response.data;
   },
 
   delete: async (id) => {
-    const response = await api.delete(`/payments.php/${id}`);
+    const response = await api.delete(withScopeUserId(`/payments.php/${id}`));
     return response.data;
   }
 };
 
 export const dashboardService = {
   getStats: async () => {
-    const response = await api.get('/dashboard.php/stats');
+    const response = await api.get(withScopeUserId('/dashboard.php/stats'));
     return response.data;
   },
 
   getRiskyClients: async () => {
-    const response = await api.get('/dashboard.php/clients/risky');
+    const response = await api.get(withScopeUserId('/dashboard.php/clients/risky'));
     return response.data;
   },
 
   getTopClients: async () => {
-    const response = await api.get('/dashboard.php/clients/top');
+    const response = await api.get(withScopeUserId('/dashboard.php/clients/top'));
     return response.data;
   },
 
   getTopClientsByQuarter: async (quarter = 'this', limit = 5) => {
-    const response = await api.get(`/dashboard.php/clients/top?quarter=${encodeURIComponent(quarter)}&limit=${limit}`);
+    const response = await api.get(withScopeUserId(`/dashboard.php/clients/top?quarter=${encodeURIComponent(quarter)}&limit=${limit}`));
     return response.data;
   },
 
   getOverdueByThreshold: async (thresholdDays = 0) => {
-    const response = await api.get(`/dashboard.php/invoices/overdue?threshold_days=${thresholdDays}`);
+    const response = await api.get(withScopeUserId(`/dashboard.php/invoices/overdue?threshold_days=${thresholdDays}`));
     return response.data;
   }
 };
 
 export const recurringService = {
   getAll: async () => {
-    const response = await api.get('/recurring.php');
+    const response = await api.get(withScopeUserId('/recurring.php'));
     return response.data;
   },
 
   create: async (templateData) => {
-    const response = await api.post('/recurring.php', templateData);
+    const response = await api.post(withScopeUserId('/recurring.php'), templateData);
     return response.data;
   },
 
   update: async (id, templateData) => {
-    const response = await api.put(`/recurring.php/${id}`, templateData);
+    const response = await api.put(withScopeUserId(`/recurring.php/${id}`), templateData);
     return response.data;
   },
 
   delete: async (id) => {
-    const response = await api.delete(`/recurring.php/${id}`);
+    const response = await api.delete(withScopeUserId(`/recurring.php/${id}`));
     return response.data;
   },
 
   runNow: async () => {
-    const response = await api.post('/recurring.php/run', {});
+    const response = await api.post(withScopeUserId('/recurring.php/run'), {});
     return response.data;
   }
 };

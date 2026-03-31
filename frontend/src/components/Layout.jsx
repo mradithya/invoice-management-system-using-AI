@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -7,8 +7,11 @@ import {
   Button,
   ClickAwayListener,
   Drawer,
+  FormControl,
   IconButton,
   InputAdornment,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography
@@ -27,6 +30,8 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useTheme } from '../context/ThemeContext';
+import { userService } from '../services/apiService';
+import { clearAdminScopeUserId, getAdminScopeUserId, setAdminScopeUserId } from '../utils/adminScope';
 import AiChatbot from './AiChatbot';
 import SidebarNav from './dashboard/SidebarNav';
 
@@ -41,6 +46,44 @@ const Layout = () => {
   const [draftName, setDraftName] = useState('');
   const [draftPhoto, setDraftPhoto] = useState(null);
   const [draftPhotoFile, setDraftPhotoFile] = useState(null);
+
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminScopeUserId, setAdminScopeUserIdState] = useState(() => getAdminScopeUserId());
+
+  useEffect(() => {
+    if (!isAdmin) {
+      clearAdminScopeUserId();
+      setAdminUsers([]);
+      setAdminScopeUserIdState(null);
+      return;
+    }
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const response = await userService.getAll();
+        if (!mounted) return;
+
+        if (response?.success) {
+          const list = Array.isArray(response.data) ? response.data : [];
+          setAdminUsers(list);
+
+          const current = getAdminScopeUserId();
+          if (current && !list.some((u) => Number(u?.id) === Number(current))) {
+            clearAdminScopeUserId();
+            setAdminScopeUserIdState(null);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isAdmin]);
 
   const resolvePhotoSrc = (photo) => {
     if (!photo || typeof photo !== 'string') return undefined;
@@ -260,6 +303,48 @@ const Layout = () => {
             </Typography>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: 'auto' }}>
+              {isAdmin ? (
+                <FormControl size="small" sx={{ minWidth: { xs: 160, sm: 220 } }}>
+                  <Select
+                    value={adminScopeUserId ? String(adminScopeUserId) : ''}
+                    displayEmpty
+                    onChange={(event) => {
+                      const next = event.target.value ? Number(event.target.value) : 0;
+                      if (next > 0) {
+                        setAdminScopeUserId(next);
+                        setAdminScopeUserIdState(next);
+                      } else {
+                        clearAdminScopeUserId();
+                        setAdminScopeUserIdState(null);
+                      }
+                    }}
+                    renderValue={(selected) => {
+                      if (!selected) {
+                        return (
+                          <Typography variant="body2" color="text.secondary">
+                            Select user
+                          </Typography>
+                        );
+                      }
+
+                      const found = adminUsers.find((u) => String(u?.id) === String(selected));
+                      return found?.full_name ? found.full_name : 'User';
+                    }}
+                    sx={{
+                      borderRadius: 999,
+                      '& .MuiSelect-select': { py: 0.9 }
+                    }}
+                  >
+                    <MenuItem value="">Select user</MenuItem>
+                    {adminUsers.map((u) => (
+                      <MenuItem key={u.id} value={String(u.id)}>
+                        {u.full_name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
+
               <TextField
                 placeholder="Search your items"
                 size="small"
@@ -418,7 +503,7 @@ const Layout = () => {
                 minHeight: '100%'
               }}
             >
-              <Outlet />
+              <Outlet key={isAdmin ? String(adminScopeUserId || 'no-scope') : 'user'} />
             </Box>
           </motion.div>
         </Box>

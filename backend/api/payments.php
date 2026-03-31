@@ -24,7 +24,13 @@ $database = new Database();
 $db = $database->getConnection();
 
 $payment = new Payment($db);
-$user_id = Auth::getUserId();
+$actor_user_id = Auth::getUserId();
+$is_admin = Auth::getUserRole() === 'admin';
+$scope_user_id = $is_admin ? intval($_GET['user_id'] ?? 0) : $actor_user_id;
+
+if ($is_admin && $scope_user_id <= 0) {
+    Response::validationError(['user_id is required for admin']);
+}
 
 // Parse request URI
 $uri_parts = explode('/', trim($_SERVER['REQUEST_URI'], '/'));
@@ -53,9 +59,18 @@ if (in_array('invoice', $uri_parts)) {
 switch ($method) {
     case 'GET':
         if ($invoice_id) {
+            // Ensure invoice belongs to the scoped user
+            $invoice = new Invoice($db);
+            $invoice->id = $invoice_id;
+            $invoice->user_id = $scope_user_id;
+            $invoice_data = $invoice->readOne();
+            if (!$invoice_data) {
+                Response::notFound('Invoice not found');
+            }
+
             // Get payments for an invoice
             $payment->invoice_id = $invoice_id;
-            $stmt = $payment->readByInvoice();
+            $stmt = $payment->readByInvoiceForUser($scope_user_id);
 
             $payments = [];
             while ($row = $stmt->fetch()) {
@@ -83,6 +98,15 @@ switch ($method) {
         $payment->reference_number = $data->reference_number ?? '';
         $payment->notes = $data->notes ?? '';
 
+        // Ensure invoice belongs to the scoped user
+        $invoice = new Invoice($db);
+        $invoice->id = $payment->invoice_id;
+        $invoice->user_id = $scope_user_id;
+        $invoice_data = $invoice->readOne();
+        if (!$invoice_data) {
+            Response::notFound('Invoice not found');
+        }
+
         // Start transaction
         $db->beginTransaction();
 
@@ -90,12 +114,6 @@ switch ($method) {
             if ($payment->create()) {
                 // Check if invoice is fully paid
                 $total_paid = $payment->getTotalPaid();
-
-                // Get invoice total
-                $invoice = new Invoice($db);
-                $invoice->id = $payment->invoice_id;
-                $invoice->user_id = $user_id;
-                $invoice_data = $invoice->readOne();
 
                 if ($invoice_data && $total_paid >= $invoice_data['total']) {
                     // Update invoice status to Paid
@@ -125,11 +143,11 @@ switch ($method) {
 
         $payment->id = $payment_id;
 
-        if ($payment->delete()) {
+        if ($payment->deleteForUser($scope_user_id)) {
             Response::success([], 'Payment deleted successfully');
-        } else {
-            Response::serverError('Failed to delete payment');
         }
+
+        Response::notFound('Payment not found');
         break;
 
     default:

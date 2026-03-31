@@ -13,7 +13,13 @@ Auth::requireAuth();
 $method = $_SERVER['REQUEST_METHOD'];
 $database = new Database();
 $db = $database->getConnection();
-$user_id = Auth::getUserId();
+$actor_user_id = Auth::getUserId();
+$is_admin = Auth::getUserRole() === 'admin';
+$scope_user_id = $is_admin ? intval($_GET['user_id'] ?? 0) : $actor_user_id;
+
+if ($is_admin && $scope_user_id <= 0) {
+    Response::validationError(['user_id is required for admin']);
+}
 
 $uri_parts = explode('/', trim($_SERVER['REQUEST_URI'], '/'));
 $template_id = null;
@@ -34,7 +40,7 @@ switch ($method) {
                              LEFT JOIN clients c ON c.id = r.client_id
                              WHERE r.user_id = :user_id
                              ORDER BY r.created_at DESC");
-        $stmt->bindParam(':user_id', $user_id);
+        $stmt->bindParam(':user_id', $scope_user_id);
         $stmt->execute();
 
         $templates = [];
@@ -49,7 +55,7 @@ switch ($method) {
 
     case 'POST':
         if ($is_run_request) {
-            $count = RecurringProcessor::runDueTemplatesForUser($db, $user_id);
+            $count = RecurringProcessor::runDueTemplatesForUser($db, $scope_user_id);
             Response::success(['created_count' => $count], 'Recurring invoices processed');
         }
 
@@ -96,7 +102,7 @@ switch ($method) {
         }
         $is_active = isset($data->is_active) ? (intval($data->is_active) ? 1 : 0) : 1;
 
-        $stmt->bindParam(':user_id', $user_id);
+        $stmt->bindParam(':user_id', $scope_user_id);
         $stmt->bindParam(':client_id', $data->client_id);
         $stmt->bindParam(':template_name', $data->template_name);
         $stmt->bindParam(':items_json', $items_json);
@@ -110,7 +116,9 @@ switch ($method) {
 
         if ($stmt->execute()) {
             $new_id = $db->lastInsertId();
-            AuditLogger::log($db, $user_id, 'create_recurring_template', 'recurring_template', strval($new_id));
+            AuditLogger::log($db, $actor_user_id, 'create_recurring_template', 'recurring_template', strval($new_id), [
+                'target_user_id' => $scope_user_id
+            ]);
             Response::success(['id' => $new_id], 'Recurring template created', 201);
         }
 
@@ -163,10 +171,12 @@ switch ($method) {
         $stmt->bindParam(':next_run_date', $next_run_date);
         $stmt->bindParam(':is_active', $is_active);
         $stmt->bindParam(':id', $template_id);
-        $stmt->bindParam(':user_id', $user_id);
+        $stmt->bindParam(':user_id', $scope_user_id);
 
         if ($stmt->execute()) {
-            AuditLogger::log($db, $user_id, 'update_recurring_template', 'recurring_template', strval($template_id));
+            AuditLogger::log($db, $actor_user_id, 'update_recurring_template', 'recurring_template', strval($template_id), [
+                'target_user_id' => $scope_user_id
+            ]);
             Response::success([], 'Recurring template updated');
         }
 
@@ -180,10 +190,12 @@ switch ($method) {
 
         $stmt = $db->prepare("DELETE FROM recurring_invoices WHERE id = :id AND user_id = :user_id");
         $stmt->bindParam(':id', $template_id);
-        $stmt->bindParam(':user_id', $user_id);
+        $stmt->bindParam(':user_id', $scope_user_id);
 
         if ($stmt->execute()) {
-            AuditLogger::log($db, $user_id, 'delete_recurring_template', 'recurring_template', strval($template_id));
+            AuditLogger::log($db, $actor_user_id, 'delete_recurring_template', 'recurring_template', strval($template_id), [
+                'target_user_id' => $scope_user_id
+            ]);
             Response::success([], 'Recurring template deleted');
         }
 

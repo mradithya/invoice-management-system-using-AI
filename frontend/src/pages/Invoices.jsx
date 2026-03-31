@@ -27,10 +27,14 @@ import Pagination from '../components/Pagination';
 import EmptyState from '../components/EmptyState';
 import { ReceiptOutlined as ReceiptIcon } from '@mui/icons-material';
 import { formatCurrencyINR } from '../utils/currency';
+import { useAuth } from '../context/AuthContext';
+import { getAdminScopeUserId } from '../utils/adminScope';
 
 const Invoices = () => {
   const navigate = useNavigate();
   const notify = useNotification();
+  const { isAdmin } = useAuth();
+  const scopeUserId = getAdminScopeUserId();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,8 +45,14 @@ const Invoices = () => {
   const itemsPerPage = 10;
 
   useEffect(() => {
+    if (isAdmin && !scopeUserId) {
+      setLoading(false);
+      setInvoices([]);
+      return;
+    }
+
     fetchInvoices();
-  }, []);
+  }, [scopeUserId, isAdmin]);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -50,6 +60,7 @@ const Invoices = () => {
   }, [searchTerm, statusFilter, sortField, sortDirection]);
 
   const fetchInvoices = async () => {
+    setLoading(true);
     try {
       const response = await invoiceService.getAll();
       if (response.success) {
@@ -163,6 +174,18 @@ const Invoices = () => {
         <CircularProgress />
         <Typography>Loading invoices...</Typography>
       </Stack>
+    );
+  }
+
+  if (isAdmin && !scopeUserId) {
+    return (
+      <AnimatedPage>
+        <EmptyState
+          icon={ReceiptIcon}
+          title="Select a user"
+          message="Choose a user from the top bar to manage invoices."
+        />
+      </AnimatedPage>
     );
   }
 

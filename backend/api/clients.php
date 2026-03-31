@@ -13,6 +13,7 @@ require_once '../config/database.php';
 require_once '../models/Client.php';
 require_once '../utils/Auth.php';
 require_once '../utils/Response.php';
+require_once '../utils/AuditLogger.php';
 
 // Require authentication
 Auth::requireAuth();
@@ -25,7 +26,15 @@ $database = new Database();
 $db = $database->getConnection();
 
 $client = new Client($db);
-$client->user_id = Auth::getUserId();
+$actor_user_id = Auth::getUserId();
+$is_admin = Auth::getUserRole() === 'admin';
+$scope_user_id = $is_admin ? intval($_GET['user_id'] ?? 0) : $actor_user_id;
+
+if ($is_admin && $scope_user_id <= 0) {
+    Response::validationError(['user_id is required for admin']);
+}
+
+$client->user_id = $scope_user_id;
 
 // Parse request URI to get ID
 $uri_parts = explode('/', trim($_SERVER['REQUEST_URI'], '/'));
@@ -87,6 +96,12 @@ switch ($method) {
         $client->company = $data->company ?? '';
 
         if ($client->create()) {
+            AuditLogger::log($db, $actor_user_id, 'create_client', 'client', strval($client->id), [
+                'target_user_id' => $scope_user_id,
+                'name' => $client->name,
+                'email' => $client->email
+            ]);
+
             Response::success([
                 'id' => $client->id,
                 'name' => $client->name,
@@ -120,6 +135,11 @@ switch ($method) {
         $client->company = $data->company ?? '';
 
         if ($client->update()) {
+            AuditLogger::log($db, $actor_user_id, 'update_client', 'client', strval($client_id), [
+                'target_user_id' => $scope_user_id,
+                'name' => $client->name,
+                'email' => $client->email
+            ]);
             Response::success([], 'Client updated successfully');
         } else {
             Response::serverError('Failed to update client');
@@ -135,6 +155,9 @@ switch ($method) {
         $client->id = $client_id;
 
         if ($client->delete()) {
+            AuditLogger::log($db, $actor_user_id, 'delete_client', 'client', strval($client_id), [
+                'target_user_id' => $scope_user_id
+            ]);
             Response::success([], 'Client deleted successfully');
         } else {
             Response::serverError('Failed to delete client');

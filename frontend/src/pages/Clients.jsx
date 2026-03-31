@@ -21,15 +21,19 @@ import {
 } from '@mui/material';
 import { clientService } from '../services/apiService';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 import AnimatedPage from '../components/AnimatedPage';
 import FormError from '../components/FormError';
 import Pagination from '../components/Pagination';
 import EmptyState from '../components/EmptyState';
 import { validateRequired, validateEmail, validatePhone } from '../utils/validationHelpers';
 import { BusinessOutlined as BusinessIcon } from '@mui/icons-material';
+import { getAdminScopeUserId } from '../utils/adminScope';
 
 const Clients = () => {
   const notify = useNotification();
+  const { isAdmin } = useAuth();
+  const scopeUserId = getAdminScopeUserId();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -47,10 +51,17 @@ const Clients = () => {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (isAdmin && !scopeUserId) {
+      setLoading(false);
+      setClients([]);
+      return;
+    }
+
     fetchClients();
-  }, []);
+  }, [scopeUserId, isAdmin]);
 
   const fetchClients = async () => {
+    setLoading(true);
     try {
       const response = await clientService.getAll();
       if (response.success) {
@@ -179,6 +190,18 @@ const Clients = () => {
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
           <CircularProgress />
         </Box>
+      </AnimatedPage>
+    );
+  }
+
+  if (isAdmin && !scopeUserId) {
+    return (
+      <AnimatedPage>
+        <EmptyState
+          icon={BusinessIcon}
+          title="Select a user"
+          message="Choose a user from the top bar to manage clients."
+        />
       </AnimatedPage>
     );
   }
